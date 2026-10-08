@@ -91,6 +91,8 @@ public class IntersectionV2X : MonoBehaviour
 
             var npc = vehicleRoot.GetComponent<NPC_WaypointDrive>();
             if (npc == null) continue;
+            // 靠邊避讓由自己的協程控制；路口廣播不能提早把它拉回車道。
+            if (npc.IsYielding) continue;
 
             float distToCenter = Vector3.Distance(npc.transform.position, transform.position);
             

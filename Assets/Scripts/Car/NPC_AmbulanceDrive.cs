@@ -134,7 +134,7 @@ public class NPC_AmbulanceDrive : NPC_WaypointDrive
                 NotifyNearbyCars();
                 nextNearbyNotificationTime = Time.time + NearbyNotificationInterval;
             }
-            CheckForwardCollisionCustom(4.0f);
+            ApplyForwardCollision(emergencySpeed);
 
             if (agent.isStopped)
                 shouldStop = true;
@@ -371,27 +371,6 @@ public class NPC_AmbulanceDrive : NPC_WaypointDrive
             agent.SetDestination(targetNode.transform.position);
 
         lastEmergencyState = isEmergency;
-    }
-
-    protected void CheckForwardCollisionCustom(float dist)
-    {
-        RaycastHit hit;
-        // 💡【終極修復方案】將「雷射筆」升級成「龜派氣功」，避免偵測死角
-        // 使用 SphereCast 射出一條有寬度的射線，確保能掃到前方車輛
-        float castRadius = 1.5f;
-        Vector3 sensorStartPoint = transform.TransformPoint(sensorOffset);
-        if (Physics.SphereCast(sensorStartPoint, castRadius, transform.forward, out hit, dist))
-        {
-            // 確保不會偵測到自己
-            if (hit.collider.CompareTag("Car") && hit.transform.root != this.transform.root)
-            {
-                agent.isStopped = true;
-                agent.velocity = Vector3.zero;
-                return;
-            }
-        }
-
-        agent.isStopped = false;
     }
 
     private void HandleEffects()
