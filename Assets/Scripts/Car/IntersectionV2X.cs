@@ -37,22 +37,32 @@ public class IntersectionV2X : MonoBehaviour
 
         isOverridden = true;
 
+        ApplyEmergencyLights();
+        ForceUpdateStopLineNodes(verticalRed, false);
+        ForceUpdateStopLineNodes(horizontalRed, true);
+
+        NotifyNearbyNPCs(ambulance);
+        resetTimer = 8.0f; // 延長重設時間
+    }
+
+    // 套件的交通燈會在 Update 中照常切換；在同一幀最後維持救護車優先燈號。
+    void LateUpdate()
+    {
+        if (isOverridden)
+            ApplyEmergencyLights();
+    }
+
+    void ApplyEmergencyLights()
+    {
         // --- 🚑 直向：強制變綠 ---
         foreach(var r in verticalRed) if(r != null) r.SetActive(false);
         foreach(var y in verticalYellow) if(y != null) y.SetActive(false);
         foreach(var g in verticalGreen) if(g != null) g.SetActive(true);
 
-        // 💡【關鍵新增】直接找到對應的 TrafficNode，強制更新其內部狀態為綠燈
-        ForceUpdateStopLineNodes(verticalRed, false);
-
         // --- 🛑 橫向：強制變紅 ---
         foreach(var r in horizontalRed) if(r != null) r.SetActive(true);
         foreach(var y in horizontalYellow) if(y != null) y.SetActive(false);
         foreach(var g in horizontalGreen) if(g != null) g.SetActive(false);
-        ForceUpdateStopLineNodes(horizontalRed, true);
-
-        NotifyNearbyNPCs(ambulance);
-        resetTimer = 8.0f; // 延長重設時間
     }
 
     void Update() 
