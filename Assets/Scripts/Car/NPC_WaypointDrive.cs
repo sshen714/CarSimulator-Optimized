@@ -491,6 +491,8 @@ public class NPC_WaypointDrive : MonoBehaviour
             v2xForceStop = false;
             currentYieldState = YieldState.None;
             isYielding = false;
+            isWaitingAtRedLight = false;
+            isFullyStopped = false;
             
             agent.isStopped = false;
             agent.speed = Mathf.Max(agent.speed, originalSpeed * 1.5f); // 速度再拉高一點
