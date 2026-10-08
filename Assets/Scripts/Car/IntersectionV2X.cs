@@ -49,6 +49,7 @@ public class IntersectionV2X : MonoBehaviour
         foreach(var r in horizontalRed) if(r != null) r.SetActive(true);
         foreach(var y in horizontalYellow) if(y != null) y.SetActive(false);
         foreach(var g in horizontalGreen) if(g != null) g.SetActive(false);
+        ForceUpdateStopLineNodes(horizontalRed, true);
 
         NotifyNearbyNPCs(ambulance);
         resetTimer = 8.0f; // 延長重設時間
@@ -83,11 +84,15 @@ public class IntersectionV2X : MonoBehaviour
 
             float distToCenter = Vector3.Distance(npc.transform.position, transform.position);
             
-            // 💡 判斷這台車是不是「還沒過停止線」(目標節點是 StopLine)
-            bool isWaitingAtStopLine = (npc.targetNode != null && npc.targetNode.isStopLine);
+            TrafficNode stopLine = npc.targetNode;
+            bool isWaitingAtStopLine = stopLine != null && stopLine.isStopLine;
 
-            Vector3 dirToCenter = (transform.position - npc.transform.position).normalized;
-            bool isHeadingToCenter = Vector3.Dot(npc.transform.forward, dirToCenter) > 0.1f;
+            // 只在本路口橫向紅燈的停止線附近強制停車；更遠處交給一般紅燈邏輯減速。
+            bool isAtThisStopLine = isWaitingAtStopLine &&
+                                    stopLine.redLightModel != null &&
+                                    horizontalRed.Contains(stopLine.redLightModel) &&
+                                    Vector3.Distance(npc.transform.position, stopLine.transform.position) <= 4f &&
+                                    Vector3.Dot(npc.transform.forward, stopLine.transform.position - npc.transform.position) >= 0f;
             
             float forwardDot = Vector3.Dot(npc.transform.forward, ambDir);
             bool isSameDirection = forwardDot > 0.4f;
@@ -110,8 +115,8 @@ public class IntersectionV2X : MonoBehaviour
                 {
                     npc.V2X_Accelerate();
                 }
-                // 💡 如果它「還沒過停止線」或者正在朝著路口開，乖乖給我死死煞停！
-                else if (isHeadingToCenter || isWaitingAtStopLine)
+                // 已抵達本路口的橫向停止線時，才補上 V2X 強制停車。
+                else if (isAtThisStopLine)
                 {
                     npc.V2X_ForceStop();
                 }
