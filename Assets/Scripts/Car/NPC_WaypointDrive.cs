@@ -65,6 +65,7 @@ public class NPC_WaypointDrive : MonoBehaviour
         // 如果已經在閃了，就不要理會
         if (isYielding || currentYieldState != YieldState.None || ambulance == null || v2xForceStop) return;
         if (agent == null || !agent.isActiveAndEnabled || !agent.isOnNavMesh) return;
+        if (targetNode != null && targetNode.MustStopForEmergency) return;
 
         // 防呆：對向車直接無視
         if (Vector3.Dot(transform.forward, ambulance.transform.forward) < -0.2f) return;
@@ -292,6 +293,18 @@ public class NPC_WaypointDrive : MonoBehaviour
     protected virtual void Update() {
         if (targetNode == null || agent == null) return;
 
+        // 路口緊急停等優先於先前的加速／靠邊指令，仍沿正常路線到停止線。
+        if (targetNode.MustStopForEmergency && (v2xForceGo || v2xForceStop || isYielding))
+        {
+            bool restorePath = isYielding;
+            CancelYieldRoutine();
+            v2xForceGo = false;
+            v2xForceStop = false;
+            yieldStatus = "緊急路口：準備停止線停等";
+            if (restorePath && agent.isActiveAndEnabled && agent.isOnNavMesh)
+                agent.SetDestination(targetNode.transform.position);
+        }
+
         // 💡【關鍵修正】將避讓判斷移到最前面！只要在 S 型避讓中，就絕對不執行任何其他駕駛邏輯。
         if (isYielding) return; 
 
@@ -419,7 +432,7 @@ public class NPC_WaypointDrive : MonoBehaviour
     }
 
     protected virtual bool HandleTrafficLights() {
-        if (v2xForceGo) return false;
+        if (v2xForceGo && !targetNode.MustStopForEmergency) return false;
         if (isYielding || currentYieldState != YieldState.None) return false; 
 
         if (targetNode.isStopLine && targetNode.currentIsRed) {
@@ -432,6 +445,7 @@ public class NPC_WaypointDrive : MonoBehaviour
                 agent.velocity = Vector3.zero;
                 agent.ResetPath();
                 isFullyStopped = true;
+                if (targetNode.MustStopForEmergency) yieldStatus = "緊急路口：停止線停等";
                 return true; // 告訴 Update 我正在等紅燈
             } else if (dist <= 15f) {
                 // 在 15 米內，就開始根據距離降低速度，準備停車
@@ -557,6 +571,7 @@ public class NPC_WaypointDrive : MonoBehaviour
     // 🚑 救護車 V2X 指令：加速逃離
     public void V2X_Accelerate() 
     {
+        if (targetNode != null && targetNode.MustStopForEmergency) return;
         // 加上 isOnNavMesh 防呆，確保不會噴紅字
         if (agent != null && agent.isActiveAndEnabled && agent.isOnNavMesh)
         {

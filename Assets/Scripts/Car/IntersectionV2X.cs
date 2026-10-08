@@ -20,12 +20,18 @@ public class IntersectionV2X : MonoBehaviour
     private float resetTimer = 0f;
     private bool isOverridden = false; // 是否正處於被救護車覆寫的狀態
     private Dictionary<GameObject, bool> originalLightStates = new Dictionary<GameObject, bool>(); // 用來記住燈號原始狀態
+    private readonly List<TrafficNode> controlledStopLines = new List<TrafficNode>();
+    private bool stopLinesCached;
+    private Vector3 emergencyApproachDirection;
 
     public void AmbulanceApproach(NPC_AmbulanceDrive ambulance)
     {
+        if (ambulance == null) return;
+        if (!stopLinesCached) CacheStopLines();
         // 如果不是在覆寫狀態，就先儲存當前的燈號狀態
         if (!isOverridden)
         {
+            emergencyApproachDirection = ResolveApproachDirection(ambulance);
             originalLightStates.Clear();
             StoreLightStates(verticalRed);
             StoreLightStates(verticalYellow);
@@ -38,8 +44,12 @@ public class IntersectionV2X : MonoBehaviour
         isOverridden = true;
 
         ApplyEmergencyLights();
-        ForceUpdateStopLineNodes(verticalRed, false);
-        ForceUpdateStopLineNodes(horizontalRed, true);
+        foreach (var node in controlledStopLines)
+        {
+            if (node == null) continue;
+            bool mustStop = !IsSameApproach(transform.position - node.transform.position, emergencyApproachDirection);
+            node.SetEmergencySignal(this, mustStop);
+        }
 
         NotifyNearbyNPCs(ambulance);
         resetTimer = 8.0f; // 延長重設時間
@@ -81,7 +91,6 @@ public class IntersectionV2X : MonoBehaviour
     void NotifyNearbyNPCs(NPC_AmbulanceDrive ambulance)
     {
         Collider[] hits = Physics.OverlapSphere(transform.position, 60f);
-        Vector3 ambDir = ambulance != null ? ambulance.transform.forward.normalized : Vector3.forward;
 
         foreach (var hit in hits)
         {
@@ -91,48 +100,27 @@ public class IntersectionV2X : MonoBehaviour
 
             var npc = vehicleRoot.GetComponent<NPC_WaypointDrive>();
             if (npc == null) continue;
+            TrafficNode stopLine = npc.targetNode;
+            // 停止線的緊急停等優先，NPC 自己依距離減速，不能在遠處直接煞死。
+            if (stopLine != null && stopLine.MustStopForEmergency) continue;
             // 靠邊避讓由自己的協程控制；路口廣播不能提早把它拉回車道。
             if (npc.IsYielding) continue;
 
             float distToCenter = Vector3.Distance(npc.transform.position, transform.position);
             
-            TrafficNode stopLine = npc.targetNode;
             bool isWaitingAtStopLine = stopLine != null && stopLine.isStopLine;
 
-            // 只在本路口橫向紅燈的停止線附近強制停車；更遠處交給一般紅燈邏輯減速。
-            bool isAtThisStopLine = isWaitingAtStopLine &&
-                                    stopLine.redLightModel != null &&
-                                    horizontalRed.Contains(stopLine.redLightModel) &&
-                                    Vector3.Distance(npc.transform.position, stopLine.transform.position) <= 4f &&
-                                    Vector3.Dot(npc.transform.forward, stopLine.transform.position - npc.transform.position) >= 0f;
-            
-            float forwardDot = Vector3.Dot(npc.transform.forward, ambDir);
-            bool isSameDirection = forwardDot > 0.4f;
-
-            // 🚥 【精準分流邏輯】 🚥
-
-            // 1. 同向車 (救護車正前方的車)：開特權！
-            // 因為它擋到救護車了，只要靠近路口，不管三七二十一直接踩油門衝過去清空！
-            if (isSameDirection && distToCenter <= intersectionCoreRadius)
+            if (isWaitingAtStopLine)
             {
-                npc.V2X_Accelerate();
-                continue; 
-            }
-
-            // 2. 橫向與對向車 (非同向)：必須遵守規矩！
-            if (!isSameDirection)
-            {
-                // 如果它「已經越過停止線」卡在路口正中央了，只能叫它加速逃離
-                if (distToCenter <= intersectionCoreRadius && !isWaitingAtStopLine)
-                {
+                if (controlledStopLines.Contains(stopLine) &&
+                    IsSameApproach(transform.position - stopLine.transform.position, emergencyApproachDirection))
                     npc.V2X_Accelerate();
-                }
-                // 已抵達本路口的橫向停止線時，才補上 V2X 強制停車。
-                else if (isAtThisStopLine)
-                {
-                    npc.V2X_ForceStop();
-                }
+                continue;
             }
+
+            // 已越過停止線的車先駛離，避免橫向或對向車停在路口中央。
+            if (distToCenter <= intersectionCoreRadius)
+                npc.V2X_Accelerate();
         }
     }
 
@@ -174,16 +162,70 @@ public class IntersectionV2X : MonoBehaviour
             }
         }
         isOverridden = false;
+        foreach (var node in controlledStopLines)
+            if (node != null) node.ClearEmergencySignal(this);
     }
 
-    // 強制更新停止線節點的狀態
-    void ForceUpdateStopLineNodes(List<GameObject> redLights, bool isRed)
+    void OnDisable()
     {
-        TrafficNode[] allNodes = FindObjectsOfType<TrafficNode>();
-        foreach (var node in allNodes) {
-            if (node.isStopLine && redLights.Contains(node.redLightModel)) {
-                node.currentIsRed = isRed;
-            }
+        RestoreOriginalLights();
+    }
+
+    internal static bool IsSameApproach(Vector3 incoming, Vector3 ambulanceDirection)
+    {
+        incoming.y = 0f;
+        ambulanceDirection.y = 0f;
+        return incoming.sqrMagnitude > 0.01f && ambulanceDirection.sqrMagnitude > 0.01f &&
+            Vector3.Dot(incoming.normalized, ambulanceDirection.normalized) >= 0.7f;
+    }
+
+    private Vector3 ResolveApproachDirection(NPC_AmbulanceDrive ambulance)
+    {
+        TrafficNode best = null;
+        float nearest = float.PositiveInfinity;
+        foreach (var node in controlledStopLines)
+        {
+            if (node == null) continue;
+            Vector3 incoming = transform.position - node.transform.position;
+            if (!IsSameApproach(incoming, ambulance.transform.forward)) continue;
+            float distance = (node.transform.position - ambulance.transform.position).sqrMagnitude;
+            if (distance < nearest) { nearest = distance; best = node; }
         }
+        // 救護車通過或轉彎時仍維持原入口，避免對向突然被當成同向。
+        return best != null ? transform.position - best.transform.position : ambulance.transform.forward;
+    }
+
+    private void CacheStopLines()
+    {
+        controlledStopLines.Clear();
+        var controllers = FindObjectsOfType<IntersectionV2X>();
+        foreach (var node in FindObjectsOfType<TrafficNode>())
+        {
+            if (!node.isStopLine) continue;
+            IntersectionV2X owner = null;
+            foreach (var controller in controllers)
+            {
+                if (node.redLightModel != null &&
+                    (controller.verticalRed.Contains(node.redLightModel) || controller.horizontalRed.Contains(node.redLightModel)))
+                { owner = controller; break; }
+            }
+            // 場景有未綁紅燈的停止線；用同高度、附近最近路口補上緊急規則。
+            if (owner == null)
+            {
+                float nearest = float.PositiveInfinity;
+                foreach (var controller in controllers)
+                {
+                    Vector3 offset = node.transform.position - controller.transform.position;
+                    if (Mathf.Abs(offset.y) > 5f) continue;
+                    offset.y = 0f;
+                    float range = controller.intersectionCoreRadius + 20f;
+                    if (offset.sqrMagnitude > range * range || offset.sqrMagnitude >= nearest) continue;
+                    nearest = offset.sqrMagnitude;
+                    owner = controller;
+                }
+            }
+            if (owner == this) controlledStopLines.Add(node);
+        }
+        stopLinesCached = true;
     }
 }

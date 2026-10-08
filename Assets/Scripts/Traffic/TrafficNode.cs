@@ -15,10 +15,36 @@ public class TrafficNode : MonoBehaviour
     [Header("🔌 連接紅綠燈套件")]
     [Tooltip("把負責紅燈的那顆『燈泡物件』拖進來！")]
     public GameObject redLightModel; // 👈 就是漏掉這超級關鍵的一行啦！
+    private IntersectionV2X emergencyController;
+    private bool emergencyMustStop;
+    private bool previousIsRed;
+    public bool MustStopForEmergency => emergencyController != null && emergencyMustStop;
+
+    public void SetEmergencySignal(IntersectionV2X controller, bool mustStop)
+    {
+        if (emergencyController == null) previousIsRed = currentIsRed;
+        emergencyController = controller;
+        emergencyMustStop = mustStop;
+        currentIsRed = mustStop;
+    }
+
+    public void ClearEmergencySignal(IntersectionV2X controller)
+    {
+        if (emergencyController != controller) return;
+        emergencyController = null;
+        emergencyMustStop = false;
+        currentIsRed = redLightModel != null ? redLightModel.activeInHierarchy : previousIsRed;
+    }
 
     // 每一幀檢查紅綠燈狀態
     void Update()
     {
+        // 優先規則不能被第三方燈號週期在同一幀覆寫。
+        if (emergencyController != null)
+        {
+            currentIsRed = emergencyMustStop;
+            return;
+        }
         // 如果這個點是停止線，而且你有把紅燈模型拖給它
         if (isStopLine && redLightModel != null)
         {
