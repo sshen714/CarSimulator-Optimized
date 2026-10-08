@@ -358,12 +358,16 @@ MonoBehaviour:
   boxHalfExtents: {x: 1.2, y: 1, z: 0.2}
   isEmergency: 0
   emergencySpeed: 15
-  detectRadius: 60
-  intersectionDist: 50
+  detectRadius: 30
+  leftIntersectionCenter: {fileID: 0}
+  rightIntersectionCenter: {fileID: 0}
+  emergencyPassDistance: 25
   useSmartNavigation: 1
   nodesToGoStraight: 1
   sirenLights: {fileID: 3922672877754541236}
   sirenAudio: {fileID: 4303493472629559925}
+  ambulanceWaitingAtRedLight: 0
+  ambulanceFullyStopped: 0
 --- !u!82 &4303493472629559925
 AudioSource:
   m_ObjectHideFlags: 0

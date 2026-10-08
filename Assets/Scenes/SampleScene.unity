@@ -1985,7 +1985,6 @@ MonoBehaviour:
   spawnInterval: 3
   maxCars: 150
   startNodes:
-  - {fileID: 1815268953}
   - {fileID: 1114264808}
   - {fileID: 1565188637}
   - {fileID: 126345399}
@@ -1993,6 +1992,7 @@ MonoBehaviour:
   - {fileID: 349269046}
   - {fileID: 882468866}
   - {fileID: 2083272988}
+  - {fileID: 1586603609}
   ambulanceStartNode: {fileID: 762575694}
   cameraFollowScript: {fileID: 963194231}
 --- !u!1 &83356517
