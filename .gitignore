@@ -8,10 +8,11 @@
 UserSettings/
 .vs/
 
-# EasyRoads3D inside Unity project
-test3/Assets/EasyRoads3D/
-test3/Assets/EasyRoads3D Assets/
-test3/Assets/EasyRoads3D Scenes/
+# Third-party EasyRoads3D assets (not included in the repository)
+Assets/EasyRoads3D/
+Assets/EasyRoads3D Assets/
+Assets/EasyRoads3D Scenes/
+.DS_Store
 *.csproj
 *.unityproj
 *.sln

@@ -7,8 +7,8 @@ public class NPC_AmbulanceDrive : NPC_WaypointDrive
 {
     [Header("模式控制")]
     public bool isEmergency = false;
-    public float emergencySpeed = 15.0f;
-    public float detectRadius = 55f;
+    public float emergencySpeed = 20.0f; // 稍微提高緊急模式速度，使其更明顯
+    public float detectRadius = 5f;     // 💡 解決方式：縮小偵測半徑，避免車輛過早避讓
 
     [Header("自動判斷左右路口")]
     public Transform leftIntersectionCenter;
@@ -33,6 +33,8 @@ public class NPC_AmbulanceDrive : NPC_WaypointDrive
     public AudioSource sirenAudio;
 
     private bool lastEmergencyState;
+    private const float NearbyNotificationInterval = 0.1f;
+    private float nextNearbyNotificationTime;
 
     public bool ambulanceWaitingAtRedLight;
     public bool ambulanceFullyStopped;
@@ -71,7 +73,9 @@ public class NPC_AmbulanceDrive : NPC_WaypointDrive
 
         HandleStateChange();
         HandleEffects();
-        CheckEmergencyPassedIntersection();
+
+        // 🚨 把下面這行加上雙斜線註解掉，救護車就不會自動關閉緊急模式了！
+        // CheckEmergencyPassedIntersection();
 
         if (useSmartNavigation)
             SmartNavigation();
@@ -124,7 +128,12 @@ public class NPC_AmbulanceDrive : NPC_WaypointDrive
         else
         {
             agent.isStopped = false;
-            NotifyNearbyCars();
+            // V2X 廣播會搜尋場景和周圍碰撞體；每 0.1 秒更新即可保持即時反應。
+            if (Time.time >= nextNearbyNotificationTime)
+            {
+                NotifyNearbyCars();
+                nextNearbyNotificationTime = Time.time + NearbyNotificationInterval;
+            }
             CheckForwardCollisionCustom(4.0f);
 
             if (agent.isStopped)
@@ -351,6 +360,7 @@ public class NPC_AmbulanceDrive : NPC_WaypointDrive
             agent.speed = emergencySpeed;
             agent.acceleration = 40f;
             agent.angularSpeed = 1000f;
+            nextNearbyNotificationTime = 0f;
 
             isWaitingAtRedLight = false;
             isFullyStopped = false;
@@ -366,10 +376,14 @@ public class NPC_AmbulanceDrive : NPC_WaypointDrive
     protected void CheckForwardCollisionCustom(float dist)
     {
         RaycastHit hit;
-
-        if (Physics.Raycast(transform.TransformPoint(sensorOffset), transform.forward, out hit, dist))
+        // 💡【終極修復方案】將「雷射筆」升級成「龜派氣功」，避免偵測死角
+        // 使用 SphereCast 射出一條有寬度的射線，確保能掃到前方車輛
+        float castRadius = 1.5f;
+        Vector3 sensorStartPoint = transform.TransformPoint(sensorOffset);
+        if (Physics.SphereCast(sensorStartPoint, castRadius, transform.forward, out hit, dist))
         {
-            if (hit.collider.CompareTag("Car"))
+            // 確保不會偵測到自己
+            if (hit.collider.CompareTag("Car") && hit.transform.root != this.transform.root)
             {
                 agent.isStopped = true;
                 agent.velocity = Vector3.zero;

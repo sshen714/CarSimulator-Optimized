@@ -138,7 +138,9 @@ public class NPC_WaypointDrive : MonoBehaviour
 
         float currentOffset = 0f;
         float timer = 0f;
-        float yieldDuration = 4.5f; // 💡 縮短避讓總時間
+        float yieldDuration = 5.5f; // 💡 縮短避讓總時間
+        float nextPathUpdate = 0f;
+        TrafficNode lastPathNode = null;
 
         while (timer < yieldDuration)
         {
@@ -147,7 +149,10 @@ public class NPC_WaypointDrive : MonoBehaviour
             if (ambulance != null)
             {
                 Vector3 toCar = transform.position - ambulance.transform.position;
-                if (toCar.magnitude > 10f && Vector3.Dot(ambulance.transform.forward, toCar.normalized) > 0.5f)
+
+                // 🚨 修正兇手一：內積改成 < -0.2f
+                // 只有當「救護車已經超越我，跑到我前面了」，才解除避讓狀態！
+                if (toCar.magnitude > 5f && Vector3.Dot(ambulance.transform.forward, toCar.normalized) < -0.2f)
                 {
                     break;
                 }
@@ -166,12 +171,23 @@ public class NPC_WaypointDrive : MonoBehaviour
                     }
                 }
 
+                // 🚨 修正兇手二：每一幀都重新計算「現在馬路的右側」
+                // 確保在彎道時，車子依然會完美地貼著路邊轉彎
+                Vector3 currentRoadDir = toNode.normalized;
+                offsetDir = Vector3.Cross(Vector3.up, currentRoadDir).normalized;
+
                 currentOffset = Mathf.Lerp(currentOffset, targetOffset, Time.deltaTime * 4.0f);
                 Vector3 dynamicTarget = targetNode.transform.position + (offsetDir * currentOffset);
 
                 if (agent.isActiveAndEnabled && agent.isOnNavMesh)
                 {
-                    agent.SetDestination(dynamicTarget);
+                    // 避免每幀觸發 NavMesh 路徑重算；切換節點時仍立即更新。
+                    if (timer >= nextPathUpdate || targetNode != lastPathNode)
+                    {
+                        agent.SetDestination(dynamicTarget);
+                        nextPathUpdate = timer + 0.1f;
+                        lastPathNode = targetNode;
+                    }
                 }
                 else
                 {
@@ -179,7 +195,7 @@ public class NPC_WaypointDrive : MonoBehaviour
                 }
             }
 
-            // 💡【關鍵修正】在 S 型避讓時，如果前方有車，不要完全煞停，而是慢速跟車
+            // 💡【保留】在 S 型避讓時的跟車邏輯
             RaycastHit frontHit;
             Vector3 frontSensorStart = transform.position + (Vector3.up * sensorOffset.y) + (transform.forward * sensorOffset.z);
             if (Physics.BoxCast(frontSensorStart, boxHalfExtents, transform.forward, out frontHit, transform.rotation, 5.0f))
@@ -191,10 +207,8 @@ public class NPC_WaypointDrive : MonoBehaviour
                 }
             }
 
-
             if (timer > 2.0f)
             {
-                // 💡 調整避讓時的減速邏輯，使其更平滑，避免急停
                 agent.speed = Mathf.Lerp(agent.speed, originalSpeed * 0.5f, Time.deltaTime * 2.0f);
             }
 
@@ -395,119 +409,58 @@ public class NPC_WaypointDrive : MonoBehaviour
         return false; // 綠燈或一般節點
     }
 
-    protected virtual void CheckForwardCollision() {
-        // 1. 先算出絕對平行的正前方
-        Vector3 flatForward = transform.forward;
-        // 💡【關鍵修正】根據您的建議，讓雷達稍微往下瞄準 (-0.1f)，更能抓到低底盤的車輛
-        flatForward.y = 0f;
-        flatForward.Normalize();
+    protected void CheckForwardCollision()
+    {
+        RaycastHit hit;
+        float castRadius = 1.5f;
+        float detectDistance = 5.0f; // 💡 把雷達看遠一點，提早反應
 
-        // 2. 【終極改裝：絕對穩定的起點】
-        // 放棄 TransformPoint！直接拿車子的世界座標 (通常在貼地處)，
-        // 往上加 Y (高度)，往絕對前方加 Z (推移距離)。
-        // 這樣不管車身怎麼翹，雷達起點永遠在固定高度！
-        Vector3 startPos = transform.position + (Vector3.up * sensorOffset.y) + (flatForward * sensorOffset.z);
+        Vector3 sensorStartPoint = transform.position + (Vector3.up * sensorOffset.y) + (transform.forward * sensorOffset.z);
 
-        // 3. 絕對平行的方塊姿態
-        Quaternion flatRotation = Quaternion.Euler(0f, transform.eulerAngles.y, 0f);
+        if (Physics.SphereCast(sensorStartPoint, castRadius, transform.forward, out hit, detectDistance))
+        {
+            if (hit.collider.CompareTag("Car") && hit.transform.root != this.transform.root)
+            {
+                // 檢查是不是對向車 (對向車不要理它)
+                if (Vector3.Dot(transform.forward, hit.transform.forward) < -0.2f) return;
 
-        // 💡 視覺化：畫出水平的黃色基準線
-        Debug.DrawRay(startPos, flatForward * sensorLength, Color.yellow);
-
-        // 4. 發射 BoxCastAll
-        RaycastHit[] hits = Physics.BoxCastAll(startPos, boxHalfExtents, flatForward, flatRotation, sensorLength);
-
-        // 💡【終極排序修正】對偵測結果按距離排序，確保永遠先處理最近的物體！
-        System.Array.Sort(hits, (x, y) => x.distance.CompareTo(y.distance));
-        
-        bool frontCarDetected = false;
-
-        foreach (RaycastHit hit in hits) {
-            if (hit.collider.CompareTag("Car") && hit.collider.transform.root != this.transform.root) {
-                
-                // 🚨【新增】：路口轉彎防卡死 (交會讓車) 邏輯 🚨
-                NPC_WaypointDrive otherCar = hit.collider.GetComponentInParent<NPC_WaypointDrive>();
-                if (otherCar != null) {
-                    // 1. 判斷兩台車的行駛方向夾角
-                    // Dot Product 越接近 1 代表同向(跟車)，接近 0 代表垂直交匯，接近 -1 代表對向。
-                    float directionDot = Vector3.Dot(transform.forward, otherCar.transform.forward);
-
-                    // 2. 如果不是單純的「前後排隊跟車」(例如兩車方向差異大於 36 度，Dot < 0.8)
-                    if (directionDot < 0.8f) {
-                        // 3. 【終極防卡死：比大小決定路權】
-                        // 比較兩台車的專屬身分證 ID。ID 大的擁有路權！
-                        if (this.gameObject.GetInstanceID() > otherCar.gameObject.GetInstanceID()) {
-                            // 我是老大！我有路權！
-                            // 使用 continue 忽略這次的碰撞偵測，直接去檢查下一條射線，車子就不會煞車了！
-                            continue; 
-                        }
-                    }
-                }
-                // 🚨 新增邏輯結束 🚨
-
-
-                Debug.DrawLine(startPos, hit.point, Color.red);
-
-                frontCarDetected = true;
                 float dist = hit.distance;
 
-                // 💡【關鍵修正】因為雷達起點後移，將煞車距離補回來
-                if (dist < 3.5f) { 
-                    agent.isStopped = true;
-                    agent.velocity = Vector3.zero;
-                    return; 
-                }
-                if (v2xForceGo)
+                // 1. 🚨 終極危險距離：徹底煞停
+                if (dist < 3.0f)
                 {
-                    // 正在逃離時，保持最高速，不減速
-                    return;
-                }
-
-                // 💡【路口路權判斷】解決轉彎時互相卡死的問題
-                if (IsInIntersection() && dist < 12.0f) {
-                    Vector3 toOtherCar = hit.transform.position - transform.position;
-                    float rightDot = Vector3.Dot(toOtherCar, transform.right);
-
-                    if (rightDot > 0.1f) { // 如果對方在我的右前方，我應該禮讓
+                    if (agent.isActiveAndEnabled && agent.isOnNavMesh) {
                         agent.isStopped = true;
                         agent.velocity = Vector3.zero;
                     }
-                    // 如果對方在左前方，我擁有路權，忽略碰撞繼續行駛
-                    return;
                 }
-                else if (dist < 12.0f) {                     
-                    if (IsInIntersection()) {
-                        // 💡 【新增】：如果不是在逃離救護車，才乖乖跟車減速；
-                        // 如果正在逃離 (v2xForceGo = true)，就保持最高速，不要減速！
-                        if (!v2xForceGo) {
-                            agent.speed = originalSpeed * 0.6f;
-                        }
+                // 2. ⚠️ 安全距離內：啟動 ACC 平滑跟車減速
+                else if (dist < 13.0f)
+                {
+                    if (agent.isActiveAndEnabled && agent.isOnNavMesh) {
                         agent.isStopped = false;
-                    } else {
-                        // 一般道路上，正常煞停
-                        agent.isStopped = true;
-                        agent.velocity = Vector3.zero;
+
+                        if (!v2xForceGo) // 如果不是在逃離救護車
+                        {
+                            // 距離越近，safeSpeedRatio 越接近 0；距離越遠，越接近 1
+                            float safeSpeedRatio = (dist - 4.0f) / (15.0f - 4.0f);
+                            float targetSpeed = originalSpeed * safeSpeedRatio;
+
+                            // 💡 使用 Lerp 讓車速「平滑」過渡到目標速度，就不會點頭頓挫了！
+                            agent.speed = Mathf.Lerp(agent.speed, targetSpeed, Time.deltaTime * 5f);
+                        }
                     }
-                    return;
                 }
-                else if (dist < 13.0f) {
-                    agent.isStopped = false;
-                    agent.speed = originalSpeed * 0.8f;
-                    return;
-                }
+                return; // 處理完前車狀況，提早結束
             }
         }
 
-        if (!frontCarDetected) {
-            if (v2xForceStop) {
-                agent.isStopped = true;
-                agent.velocity = Vector3.zero;
-            } else if (!isYielding) {
-                agent.isStopped = false;
-                // 💡 如果是強制通行狀態，即使前方沒車也要維持加速
-                if (!v2xForceGo) {
-                    agent.speed = originalSpeed;
-                }
+        // 3. 🟢 前方無車：平滑恢復正常速度
+        if (agent.isActiveAndEnabled && agent.isOnNavMesh) {
+            agent.isStopped = false;
+            if (!v2xForceGo && !isWaitingAtRedLight && !isYielding) {
+                // 慢慢加速回原本的速度，避免爆衝
+                agent.speed = Mathf.Lerp(agent.speed, originalSpeed, Time.deltaTime * 2f);
             }
         }
     }

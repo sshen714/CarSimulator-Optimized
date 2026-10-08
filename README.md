@@ -1,26 +1,15 @@
-# CarSimulatorWithCAN
+# CarSimulator-Optimized
 
-A physical car simulation project built in Unity, integrating **CAN bus communication protocols** with an intelligent **Autonomous Vehicle (AV) traffic yielding system** based on the real-world traffic flows around National Taipei University of Technology (NTUT).
+這是從 [CarSimulatorWithCAN](https://github.com/ZAPEinthezone/CarSimulatorWithCAN) 分出的 Unity 專題優化版本。原專案保持不變。Unity 專案根目錄就是此儲存庫，無須再進入 `test3` 子資料夾。
 
-## 🚀 Key Features
+## 開啟方式
 
-### 1. CAN Bus Message Simulation
-- **Vehicle Behavior Modeling**: Simulates real-time powertrain, velocity, and sensor data (e.g., radar, traffic light sensing) packaged into CAN messages.
-- **Emergency Signaling via CAN**: When an emergency vehicle (ambulance) approaches, a specific CAN ID warning message is broadcasted, triggering the immediate response of nearby NPC vehicles.
+1. 使用 Unity Hub 選擇 **Add > Add project from disk**，指定本資料夾。
+2. 使用 Unity Editor **2022.3.62f3** 開啟。
+3. 在 Project 視窗開啟 `Assets/Scenes/SampleScene.unity`。
 
-### 2. Intelligent Yielding System (NTUT Context)
-- **Dynamic Space Yielding Algorithm**: Upon receiving the CAN emergency signal, NPCs calculate road boundaries using **Raycasting** and compute a smooth S-shaped path via **Vector Mathematics** to clear the center lane (Moses Effect).
-- **V2X & Traffic Light Integration**: Features a **real-world traffic light timing model** based on the actual intersections near NTUT (e.g., Zhongxiao East Road). NPCs combine radar inputs and signal countdowns to safely decide whether to accelerate or brake at complex junctions.
+## 目前注意事項
 
-### 3. Modular & Optimized Architecture
-- **Object-Oriented Design (OOP)**: Strictly structured scripts to ensure high code readability and maintainability.
-- **Performance Optimization**: Solved the bottleneck of concurrent NPC path recalculations by shifting from global pathfinding to localized vector corrections, maintaining a stable FPS under high-density traffic.
-
-## 🛠️ System Architecture & Environment
-- **Game Engine**: Unity 3D
-- **Programming Language**: C#
-- **Core Concepts**: CAN Bus Communication, Vector Mathematics, Multi-Sensor Fusion, Object-Oriented Programming
-
-## 📦 How to Run
-1. **Clone the repo** ```bash
-   git clone [https://github.com/ZAPEinthezone/CarSimulatorWithCAN.git](https://github.com/ZAPEinthezone/CarSimulatorWithCAN.git)
+- 原儲存庫排除了第三方 EasyRoads3D 資產，因此單靠此 Git 儲存庫可能無法完整還原場景與腳本。發布或移交前，請確認第三方資產授權及安裝方式；不要直接把來源不明的資產上傳到公開 GitHub。
+- `Library/`、`Temp/`、`Logs/` 等 Unity 產生檔不納入 Git，首次開啟會重新匯入，可能需要一些時間。
+- 目前的效能調整包含降低 NPC 路徑更新及救護車附近車輛通知的呼叫頻率；尚未在此新副本完成 Unity 執行與 FPS 驗證。
