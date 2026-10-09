@@ -2,6 +2,28 @@
 
 這是以 [CarSimulatorWithCAN](https://github.com/ZAPEinthezone/CarSimulatorWithCAN) 為基礎的 Unity 車流模擬專題優化版。專案以一般車輛、救護車、交通號誌與路口互動為主；目前可從程式確認的硬體連線是 **Unity 經由序列埠傳送號誌狀態給 Arduino**。實體 CAN 封包的收發流程仍待整理與驗證，請勿將目前的序列埠同步誤認為已完成的 CAN 實作。
 
+## 專題展示
+
+本專題以 Unity 建立城市道路與車流模擬環境，整合救護車緊急模式、路口號誌優先控制、NPC 車輛避讓，以及 Arduino 實體交通號誌同步。當救護車接近路口時，系統會建立優先通行方向，並要求橫向與對向車輛在停止線前停等；救護車通過後，再恢復一般交通號誌與車流控制。
+
+### Unity 與實體號誌同步
+
+Unity 會讀取模擬場景中的交通燈狀態，透過序列埠將號誌資料傳送至 Arduino，使實體 LED 號誌能同步呈現紅、黃、綠燈狀態。此設計可用於展示虛實整合的智慧路口控制。
+
+![Unity 與 Arduino 實體交通號誌同步](docs/images/hardware-traffic-light-sync.png)
+
+### 救護車優先通行與 NPC 車流
+
+救護車進入緊急模式後，系統會偵測鄰近路口與車輛，調整路口通行權，並控制 NPC 車輛靠邊避讓、停止線停等或駛離路口中央，降低救護車受阻的情況。
+
+![救護車優先通行與 NPC 車流模擬](docs/images/emergency-vehicle-simulation.png)
+
+### 城市道路模擬場景
+
+場景以實際城市道路配置為參考，建立多個交叉路口、主要幹道、高架道路及周邊建築。道路節點與 NavMesh 導航共同控制車輛路線，作為交通號誌控制與緊急車輛優先系統的測試環境。
+
+![城市道路與交通節點配置](docs/images/city-road-network.png)
+
 ## 專案功能與流程
 
 1. `NPC_CarSpawner` 在指定的 `TrafficNode` 生成一般車輛與救護車。
